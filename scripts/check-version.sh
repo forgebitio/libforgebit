@@ -3,11 +3,10 @@
 set -euo pipefail
 
 root_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-cmake_file="${root_dir}/CMakeLists.txt"
 header_file="${root_dir}/include/forgebit/forgebit.h"
 release_tag="${1:-}"
 
-cmake_version="$(sed -n 's/^project(forgebit VERSION \([0-9][0-9.]*\).*/\1/p' "${cmake_file}" | head -n 1)"
+cmake_version="$(bash "${root_dir}/scripts/read-version.sh")"
 header_major="$(sed -n 's/^#define FORGEBIT_VERSION_MAJOR[[:space:]][[:space:]]*\([0-9][0-9]*\).*/\1/p' "${header_file}")"
 header_minor="$(sed -n 's/^#define FORGEBIT_VERSION_MINOR[[:space:]][[:space:]]*\([0-9][0-9]*\).*/\1/p' "${header_file}")"
 header_patch="$(sed -n 's/^#define FORGEBIT_VERSION_PATCH[[:space:]][[:space:]]*\([0-9][0-9]*\).*/\1/p' "${header_file}")"

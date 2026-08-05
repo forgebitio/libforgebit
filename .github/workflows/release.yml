@@ -56,12 +56,6 @@ jobs:
           HOMEBREW_NO_AUTO_UPDATE: 1
         run: brew install libsodium pkg-config
 
-      - name: Build and test
-        run: |
-          cmake -S . -B build-release-test -DCMAKE_BUILD_TYPE=Release
-          cmake --build build-release-test --parallel
-          ctest --test-dir build-release-test --output-on-failure
-
       - name: Package libraries
         run: ./scripts/package-prebuilt.sh --build-dir build-release-package --out dist
 
@@ -102,8 +96,14 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create "${GITHUB_REF_NAME}" release-assets/* \
-            --repo "${GITHUB_REPOSITORY}" \
-            --verify-tag \
-            --generate-notes \
-            --title "${GITHUB_REF_NAME}"
+          if gh release view "${GITHUB_REF_NAME}" --repo "${GITHUB_REPOSITORY}" >/dev/null 2>&1; then
+            gh release upload "${GITHUB_REF_NAME}" release-assets/* \
+              --repo "${GITHUB_REPOSITORY}" \
+              --clobber
+          else
+            gh release create "${GITHUB_REF_NAME}" release-assets/* \
+              --repo "${GITHUB_REPOSITORY}" \
+              --verify-tag \
+              --generate-notes \
+              --title "${GITHUB_REF_NAME}"
+          fi

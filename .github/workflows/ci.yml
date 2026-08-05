@@ -70,6 +70,9 @@ jobs:
           HOMEBREW_NO_AUTO_UPDATE: 1
         run: brew install libsodium pkg-config
 
+      - name: Check version metadata
+        run: bash ./scripts/check-version.sh
+
       - name: Configure
         run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug
 
@@ -93,6 +96,9 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install --yes clang libsodium-dev pkg-config
+
+      - name: Check version metadata
+        run: bash ./scripts/check-version.sh
 
       - name: Configure
         run: >-
@@ -138,6 +144,9 @@ jobs:
         env:
           HOMEBREW_NO_AUTO_UPDATE: 1
         run: brew install libsodium pkg-config
+
+      - name: Check version metadata
+        run: bash ./scripts/check-version.sh
 
       - name: Configure shared package
         if: matrix.linkage == 'shared'
