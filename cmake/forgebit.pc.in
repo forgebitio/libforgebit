@@ -1,0 +1,16 @@
+# Relocatable pkg-config entry for installed / prebuilt trees.
+# ${pcfiledir} is the directory containing this .pc file
+# (typically <prefix>/lib/pkgconfig), so ../.. is <prefix>.
+# Release packages SHOULD install with CMAKE_INSTALL_LIBDIR=lib so this
+# relative prefix resolves correctly.
+prefix=${pcfiledir}/../..
+exec_prefix=${prefix}
+libdir=${prefix}/@CMAKE_INSTALL_LIBDIR@
+includedir=${prefix}/@CMAKE_INSTALL_INCLUDEDIR@
+
+Name: forgebit
+Description: Forgebit offline Ed25519 license verification library
+Version: @PROJECT_VERSION@
+Requires.private: libsodium
+Libs: -L${libdir} -lforgebit -Wl,-rpath,${libdir}
+Cflags: -I${includedir}

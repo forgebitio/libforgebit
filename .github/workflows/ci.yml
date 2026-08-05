@@ -1,0 +1,179 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  format:
+    name: Formatting
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Install clang-format
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes clang-format
+
+      - name: Check formatting
+        run: ./scripts/format.sh --check
+
+  build:
+    name: ${{ matrix.name }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Linux / GCC
+            os: ubuntu-24.04
+            compiler: gcc
+          - name: Linux / Clang
+            os: ubuntu-24.04
+            compiler: clang
+          - name: macOS / Clang
+            os: macos-15
+            compiler: clang
+    runs-on: ${{ matrix.os }}
+    env:
+      CC: ${{ matrix.compiler }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Install Linux dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes libsodium-dev pkg-config
+
+      - name: Install macOS dependencies
+        if: runner.os == 'macOS'
+        env:
+          HOMEBREW_NO_AUTO_UPDATE: 1
+        run: brew install libsodium pkg-config
+
+      - name: Configure
+        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug
+
+      - name: Build
+        run: cmake --build build --parallel
+
+      - name: Test
+        run: ctest --test-dir build --output-on-failure
+
+  sanitizers:
+    name: Address and undefined behavior sanitizers
+    runs-on: ubuntu-24.04
+    env:
+      CC: clang
+      ASAN_OPTIONS: detect_leaks=1
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes clang libsodium-dev pkg-config
+
+      - name: Configure
+        run: >-
+          cmake -S . -B build-asan
+          -DCMAKE_BUILD_TYPE=Debug
+          -DFORGEBIT_ENABLE_SANITIZERS=ON
+
+      - name: Build
+        run: cmake --build build-asan --parallel
+
+      - name: Test
+        run: ctest --test-dir build-asan --output-on-failure
+
+  package:
+    name: ${{ matrix.os_name }} / ${{ matrix.linkage }} package
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - ubuntu-24.04
+          - macos-15
+        linkage:
+          - shared
+          - static
+        include:
+          - os: ubuntu-24.04
+            os_name: Linux
+          - os: macos-15
+            os_name: macOS
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Install Linux dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes libsodium-dev pkg-config
+
+      - name: Install macOS dependencies
+        if: runner.os == 'macOS'
+        env:
+          HOMEBREW_NO_AUTO_UPDATE: 1
+        run: brew install libsodium pkg-config
+
+      - name: Configure shared package
+        if: matrix.linkage == 'shared'
+        run: >-
+          cmake -S . -B build-package
+          -DCMAKE_BUILD_TYPE=Release
+          -DCMAKE_INSTALL_PREFIX="${{ runner.temp }}/forgebit"
+          -DCMAKE_INSTALL_LIBDIR=lib
+          -DFORGEBIT_BUILD_SHARED=ON
+          -DFORGEBIT_BUILD_STATIC=OFF
+          -DFORGEBIT_BUILD_TESTS=OFF
+
+      - name: Configure static package
+        if: matrix.linkage == 'static'
+        run: >-
+          cmake -S . -B build-package
+          -DCMAKE_BUILD_TYPE=Release
+          -DCMAKE_INSTALL_PREFIX="${{ runner.temp }}/forgebit"
+          -DCMAKE_INSTALL_LIBDIR=lib
+          -DFORGEBIT_BUILD_SHARED=OFF
+          -DFORGEBIT_BUILD_STATIC=ON
+          -DFORGEBIT_BUILD_TESTS=OFF
+
+      - name: Build and install
+        run: |
+          cmake --build build-package --parallel
+          cmake --install build-package
+
+      - name: Test installed CMake package
+        run: |
+          cmake -S tests/install-consumer -B build-installcheck \
+            -DCMAKE_PREFIX_PATH="${{ runner.temp }}/forgebit"
+          cmake --build build-installcheck --parallel
+          ./build-installcheck/forgebit_install_consumer
+
+      - name: Test installed pkg-config package
+        env:
+          PKG_CONFIG_PATH: ${{ runner.temp }}/forgebit/lib/pkgconfig
+        run: |
+          if [ "${{ matrix.linkage }}" = "static" ]; then
+            read -r -a package_flags <<< "$(pkg-config --static --cflags --libs forgebit)"
+          else
+            read -r -a package_flags <<< "$(pkg-config --cflags --libs forgebit)"
+          fi
+          ${CC:-cc} tests/install-consumer/main.c "${package_flags[@]}" \
+            -o build-installcheck/forgebit_pkgconfig_consumer
+          ./build-installcheck/forgebit_pkgconfig_consumer

@@ -1,0 +1,93 @@
+# clang-format style for libforgebit.
+# Closely matches the existing hand-written C style (4-space indent,
+# K&R braces, left-aligned pointers, broken parameter lists).
+#
+# Format:   ./scripts/format.sh
+# Check:    ./scripts/format.sh --check
+# Or:       cmake --build build --target format / format-check
+
+BasedOnStyle: LLVM
+Language: Cpp
+
+IndentWidth: 4
+TabWidth: 4
+UseTab: Never
+ColumnLimit: 100
+
+# Pointers / references: `type *name` (clang-format calls this Right).
+PointerAlignment: Right
+ReferenceAlignment: Right
+DerivePointerAlignment: false
+
+# K&R / Attach: `void foo() {`
+BreakBeforeBraces: Attach
+
+# Multi-line parameter lists put each arg on its own line and close with
+# `)` on a following line before `{`, matching the public API style.
+AlignAfterOpenBracket: BlockIndent
+BinPackArguments: false
+BinPackParameters: false
+AllowAllParametersOfDeclarationOnNextLine: false
+AllowAllArgumentsOnNextLine: false
+
+# Keep return types on the same line as the function name when possible.
+AlwaysBreakAfterReturnType: None
+
+# Keep short early-returns on one line: `if (x == NULL) return;`
+AllowShortIfStatementsOnASingleLine: WithoutElse
+AllowShortFunctionsOnASingleLine: Empty
+AllowShortLoopsOnASingleLine: false
+AllowShortCaseLabelsOnASingleLine: false
+AllowShortBlocksOnASingleLine: Never
+
+# Keep `#include` groups: public header, system, then local.
+IncludeBlocks: Regroup
+IncludeCategories:
+  - Regex: '^"forgebit/'
+    Priority: 1
+  - Regex: '^<'
+    Priority: 2
+  - Regex: '.*'
+    Priority: 3
+
+SortIncludes: CaseSensitive
+SortUsingDeclarations: true
+
+AlignConsecutiveMacros: AcrossEmptyLinesAndComments
+AlignEscapedNewlines: Left
+AlignOperands: Align
+AlignTrailingComments: true
+
+SpaceAfterCStyleCast: false
+SpaceBeforeParens: ControlStatements
+SpacesInAngles: Never
+SpacesInContainerLiterals: true
+SpacesInParentheses: false
+SpacesInSquareBrackets: false
+SpaceBeforeAssignmentOperators: true
+SpaceBeforeCpp11BracedList: true
+SpaceBeforeSquareBrackets: false
+Cpp11BracedListStyle: false
+
+IndentPPDirectives: None
+WhitespaceSensitiveMacros:
+  - FORGEBIT_PUBLIC_KEY_INIT
+  - FORGEBIT_VERIFY_OPTIONS_INIT
+  - FB_ASSERT_TRUE
+  - FB_ASSERT_FALSE
+  - FB_ASSERT_EQ_INT
+  - FB_ASSERT_STR_EQ
+  - FB_RUN_TEST
+  - FB_TEST_CASE
+  - FB_TEST_EXIT
+
+PenaltyBreakAssignment: 2
+PenaltyBreakBeforeFirstCallParameter: 19
+PenaltyExcessCharacter: 1000000
+PenaltyReturnTypeOnItsOwnLine: 1000
+
+# Don't reflow the carefully written block comments.
+CommentPragmas: '^ IWYU pragma:'
+ReflowComments: false
+MaxEmptyLinesToKeep: 1
+KeepEmptyLinesAtTheStartOfBlocks: false
