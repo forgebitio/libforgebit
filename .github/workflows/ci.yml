@@ -33,6 +33,9 @@ jobs:
           CLANG_FORMAT: ${{ runner.temp }}/clang-format/bin/clang-format
         run: ./scripts/format.sh --check
 
+      - name: Check version metadata
+        run: bash ./scripts/check-version.sh
+
   build:
     name: ${{ matrix.name }}
     strategy:
