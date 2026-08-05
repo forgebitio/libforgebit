@@ -20,12 +20,17 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v6
 
-      - name: Install clang-format
+      - name: Install clang-format 22
         run: |
           sudo apt-get update
-          sudo apt-get install --yes clang-format
+          sudo apt-get install --yes python3-venv
+          python3 -m venv "${RUNNER_TEMP}/clang-format"
+          "${RUNNER_TEMP}/clang-format/bin/python" -m pip install \
+            --disable-pip-version-check clang-format==22.1.8
 
       - name: Check formatting
+        env:
+          CLANG_FORMAT: ${{ runner.temp }}/clang-format/bin/clang-format
         run: ./scripts/format.sh --check
 
   build:

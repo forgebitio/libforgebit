@@ -240,8 +240,8 @@ ctest --test-dir build-asan
 
 ### Code style
 
-The C source is formatted with **clang-format**. Please format it before opening
-a PR:
+The C source is formatted with **clang-format 22**. Please format it before
+opening a PR:
 
 ```bash
 ./scripts/format.sh          # rewrite

@@ -9,8 +9,15 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
-if ! command -v clang-format >/dev/null 2>&1; then
+CLANG_FORMAT_BIN="${CLANG_FORMAT:-clang-format}"
+if ! command -v "$CLANG_FORMAT_BIN" >/dev/null 2>&1; then
     echo "clang-format not found. Install it (e.g. \`brew install clang-format\`)." >&2
+    exit 1
+fi
+
+CLANG_FORMAT_VERSION="$("$CLANG_FORMAT_BIN" --version)"
+if [[ "$CLANG_FORMAT_VERSION" != *"version 22."* ]]; then
+    echo "clang-format 22 is required; found: $CLANG_FORMAT_VERSION" >&2
     exit 1
 fi
 
@@ -30,11 +37,11 @@ fi
 MODE="${1:-}"
 case "$MODE" in
     "" )
-        clang-format -i --style=file "${FILES[@]}"
+        "$CLANG_FORMAT_BIN" -i --style=file "${FILES[@]}"
         echo "Formatted ${#FILES[@]} files."
         ;;
     --check )
-        if clang-format --dry-run --Werror --style=file "${FILES[@]}" 2>&1; then
+        if "$CLANG_FORMAT_BIN" --dry-run --Werror --style=file "${FILES[@]}" 2>&1; then
             echo "All ${#FILES[@]} files are correctly formatted."
         else
             echo "Formatting check failed. Run ./scripts/format.sh to fix." >&2
