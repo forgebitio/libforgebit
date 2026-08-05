@@ -267,6 +267,13 @@ opening a PR:
 3. Run `./scripts/format.sh --check`.
 4. Explain why the change is needed, not just what changed.
 
+### Releases
+
+Releases are built from tags in the form `vMAJOR.MINOR.PATCH`. Before tagging a
+release, update the version in `CMakeLists.txt` and
+`include/forgebit/forgebit.h`. CI checks that the two versions agree, and the
+release workflow checks that the tag matches them.
+
 Normative behavior is defined by Forgebit Offline Verification Protocol v1.
 
 ## License
