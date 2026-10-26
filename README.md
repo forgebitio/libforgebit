@@ -131,7 +131,7 @@ target_link_libraries(app PRIVATE Forgebit::forgebit)
 
 ```bash
 cmake -S . -B build \
-  -DCMAKE_PREFIX_PATH=/path/to/forgebit-0.1.0-darwin-arm64
+  -DCMAKE_PREFIX_PATH=/path/to/forgebit-0.2.0-darwin-arm64
 ```
 
 **With pkg-config**
@@ -189,7 +189,7 @@ With CMake `FetchContent`:
 include(FetchContent)
 FetchContent_Declare(forgebit
     GIT_REPOSITORY https://github.com/boone-studios/libforgebit.git
-    GIT_TAG v0.1.0
+    GIT_TAG v0.2.0
 )
 set(FORGEBIT_BUILD_TESTS OFF CACHE BOOL "" FORCE)
 FetchContent_MakeAvailable(forgebit)

@@ -9,7 +9,7 @@ bool fb_crypto_ensure_initialized(void) {
 }
 
 bool fb_crypto_ed25519_verify(
-    const uint8_t public_key[FB_ED25519_PUBLIC_KEY_BYTES],
+    const uint8_t public_key[FORGEBIT_PUBLIC_KEY_BYTES],
     const uint8_t signature[FB_ED25519_SIGNATURE_BYTES],
     const uint8_t *signing_input,
     size_t signing_input_len

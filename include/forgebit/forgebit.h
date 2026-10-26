@@ -16,7 +16,7 @@ extern "C" {
 #endif
 
 #define FORGEBIT_VERSION_MAJOR    0
-#define FORGEBIT_VERSION_MINOR    1
+#define FORGEBIT_VERSION_MINOR    2
 #define FORGEBIT_VERSION_PATCH    0
 
 /* fbt_ver protocol version this build supports. */

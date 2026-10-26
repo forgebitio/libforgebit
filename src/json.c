@@ -1,16 +1,24 @@
+#define _GNU_SOURCE /* strtod_l and newlocale on glibc */
+
 #include "json.h"
 
 #include "forgebit/forgebit.h"
 
 #include <errno.h>
+#include <locale.h>
+#include <math.h>
 #include <stdlib.h>
 #include <string.h>
+#if defined(__APPLE__)
+#include <xlocale.h>
+#endif
 
 typedef struct {
     const uint8_t *data;
     size_t len;
     size_t pos;
     size_t max_depth;
+    locale_t c_locale; /* created on first float, freed by fb_json_parse */
 } parse_ctx;
 
 static fb_json_status parse_value(parse_ctx *ctx, size_t depth, fb_json_value **out);
@@ -375,12 +383,21 @@ static fb_json_status parse_number(parse_ctx *ctx, fb_json_value **out) {
 
     fb_json_value *v;
     if (is_float) {
-        errno = 0;
+        /* Plain strtod follows the process locale and stops at '.' under
+         * locales such as de_DE, so parse in the C locale explicitly. */
+        if (ctx->c_locale == (locale_t)0) {
+            ctx->c_locale = newlocale(LC_NUMERIC_MASK, "C", (locale_t)0);
+            if (ctx->c_locale == (locale_t)0) {
+                free(tok);
+                return FB_JSON_ERR_ALLOC;
+            }
+        }
         char *endptr = NULL;
-        double d = strtod(tok, &endptr);
+        double d = strtod_l(tok, &endptr, ctx->c_locale);
         bool ok = (endptr == tok + tok_len);
         free(tok);
         if (!ok) return FB_JSON_ERR_SYNTAX;
+        if (!isfinite(d)) return FB_JSON_ERR_NUMBER_RANGE;
         v = alloc_value(FB_JSON_TAG_DOUBLE);
         if (v == NULL) return FB_JSON_ERR_ALLOC;
         v->as.d = d;
@@ -392,7 +409,7 @@ static fb_json_status parse_number(parse_ctx *ctx, fb_json_value **out) {
         bool range_err = (errno == ERANGE);
         free(tok);
         if (!ok) return FB_JSON_ERR_SYNTAX;
-        if (range_err) return FB_JSON_ERR_INT_RANGE;
+        if (range_err) return FB_JSON_ERR_NUMBER_RANGE;
         v = alloc_value(FB_JSON_TAG_INT);
         if (v == NULL) return FB_JSON_ERR_ALLOC;
         v->as.i = (int64_t)ll;
@@ -634,10 +651,11 @@ fb_json_status fb_json_parse(
     if (len > opts->max_bytes) return FB_JSON_ERR_TOO_LARGE;
     if (len > 0 && utf8 == NULL) return FB_JSON_ERR_SYNTAX;
 
-    parse_ctx ctx = { utf8, len, 0, opts->max_depth };
+    parse_ctx ctx = { utf8, len, 0, opts->max_depth, (locale_t)0 };
 
     fb_json_value *root = NULL;
     fb_json_status st = parse_value(&ctx, 0, &root);
+    if (ctx.c_locale != (locale_t)0) freelocale(ctx.c_locale);
     if (st != FB_JSON_OK) return st;
 
     skip_ws(&ctx);

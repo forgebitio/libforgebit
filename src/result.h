@@ -10,7 +10,7 @@
 struct forgebit_verify_result {
     bool valid;
     forgebit_result_code code;
-    char *message;
+    const char *message;
     char *key_id; /* may be NULL if no kid was safely parsed */
     fb_json_value *claims_root;
     const fb_json_value *features_view;

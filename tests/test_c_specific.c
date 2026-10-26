@@ -52,10 +52,9 @@ FB_TEST_CASE(null_license_with_nonzero_length_is_invalid_argument) {
 FB_TEST_CASE(null_options_uses_defaults) {
     forgebit_verifier *v = forgebit_verifier_create();
     forgebit_verify_result *r = NULL;
-    /* Malformed license either way, but exercises the NULL-options path
-     * without crashing. */
     forgebit_status st = forgebit_verify(v, (const uint8_t *)"a.b.c", 5, NULL, &r);
     FB_ASSERT_EQ_INT(st, FORGEBIT_STATUS_OK);
+    FB_ASSERT_EQ_INT(forgebit_result_code_get(r), FORGEBIT_MALFORMED_LICENSE);
     forgebit_verify_result_destroy(r);
     forgebit_verifier_destroy(v);
 }
@@ -95,13 +94,6 @@ FB_TEST_CASE(embedded_nul_in_payload_string_survives_round_trip) {
     FB_ASSERT_TRUE(forgebit_json_get_string(jti, &jti_bytes, &jti_len));
     FB_ASSERT_EQ_INT(jti_len, 5);
     FB_ASSERT_TRUE(memcmp(jti_bytes, "ab\0cd", 5) == 0);
-
-    /* License bytes themselves may also embed a NUL (inside the
-     * base64url-encoded payload segment this can't happen, but the API
-     * must still honor license_length rather than strlen(license)). */
-    size_t license_len = strlen(license);
-    FB_ASSERT_TRUE(forgebit_result_is_valid(r));
-    (void)license_len;
 
     forgebit_verify_result_destroy(r);
     forgebit_verifier_destroy(v);

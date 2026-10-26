@@ -13,11 +13,6 @@ static char *dup_bytes_nul_terminated(const char *bytes, size_t len) {
     return copy;
 }
 
-static char *dup_cstr(const char *s) {
-    if (s == NULL) return NULL;
-    return dup_bytes_nul_terminated(s, strlen(s));
-}
-
 forgebit_verify_result *fb_result_create(void) {
     forgebit_verify_result *r = (forgebit_verify_result *)calloc(1, sizeof(forgebit_verify_result));
     return r;
@@ -27,16 +22,14 @@ void fb_result_set_failure(forgebit_verify_result *result, forgebit_result_code 
     if (result == NULL) return;
     result->valid = false;
     result->code = code;
-    free(result->message);
-    result->message = dup_cstr(fb_code_default_message(code));
+    result->message = fb_code_default_message(code);
 }
 
 void fb_result_set_success(forgebit_verify_result *result, fb_json_value *payload_tree) {
     if (result == NULL) return;
     result->valid = true;
     result->code = FORGEBIT_VALID;
-    free(result->message);
-    result->message = dup_cstr(fb_code_default_message(FORGEBIT_VALID));
+    result->message = fb_code_default_message(FORGEBIT_VALID);
     result->claims_root = payload_tree;
     result->features_view = fb_json_object_find(payload_tree, "features");
 }
@@ -62,7 +55,6 @@ void fb_result_add_warning(forgebit_verify_result *result, forgebit_warning_code
 
 void forgebit_verify_result_destroy(forgebit_verify_result *result) {
     if (result == NULL) return;
-    free(result->message);
     free(result->key_id);
     fb_json_free(result->claims_root);
     free(result->warnings);

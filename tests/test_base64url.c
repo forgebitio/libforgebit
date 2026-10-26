@@ -61,6 +61,20 @@ FB_TEST_CASE(decode_accepts_unpadded_tail) {
     free(out);
 }
 
+FB_TEST_CASE(decode_rejects_nonzero_unused_bits) {
+    /* "AA" and "AB" both carry the byte 0x00; only "AA" is canonical. */
+    uint8_t *out = NULL;
+    size_t out_len = 0;
+    FB_ASSERT_EQ_INT(fb_base64url_decode("AA", 2, &out, &out_len), FB_B64_OK);
+    free(out);
+    FB_ASSERT_EQ_INT(fb_base64url_decode("AB", 2, &out, &out_len), FB_B64_NONCANONICAL);
+    free(out);
+    FB_ASSERT_EQ_INT(fb_base64url_decode("AAA", 3, &out, &out_len), FB_B64_OK);
+    free(out);
+    FB_ASSERT_EQ_INT(fb_base64url_decode("AAB", 3, &out, &out_len), FB_B64_NONCANONICAL);
+    free(out);
+}
+
 int main(void) {
     printf("test_base64url\n");
     FB_RUN_TEST(decode_empty);
@@ -69,5 +83,6 @@ int main(void) {
     FB_RUN_TEST(decode_rejects_invalid_char);
     FB_RUN_TEST(decode_rejects_bad_length);
     FB_RUN_TEST(decode_accepts_unpadded_tail);
+    FB_RUN_TEST(decode_rejects_nonzero_unused_bits);
     FB_TEST_EXIT();
 }
