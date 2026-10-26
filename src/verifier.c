@@ -16,6 +16,7 @@
 
 typedef struct {
     char *key_id;
+    size_t key_id_len;
     forgebit_public_key key;
 } verifier_entry;
 
@@ -44,7 +45,7 @@ static const forgebit_public_key *find_key(
     size_t kid_len
 ) {
     for (size_t i = 0; i < verifier->count; i++) {
-        if (strlen(verifier->entries[i].key_id) == kid_len &&
+        if (verifier->entries[i].key_id_len == kid_len &&
             memcmp(verifier->entries[i].key_id, kid, kid_len) == 0) {
             return &verifier->entries[i].key;
         }
@@ -86,6 +87,7 @@ forgebit_status forgebit_verifier_add_key(
     memcpy(key_id_copy, key_id, key_id_len + 1);
 
     verifier->entries[verifier->count].key_id = key_id_copy;
+    verifier->entries[verifier->count].key_id_len = key_id_len;
     verifier->entries[verifier->count].key = *public_key;
     verifier->entries[verifier->count].key.struct_size = sizeof(forgebit_public_key);
     verifier->count++;
@@ -110,11 +112,8 @@ forgebit_status forgebit_verifier_add_key_base64url(
         &decoded,
         &decoded_len
     );
-    if (bst != FB_B64_OK) {
-        free(decoded);
-        return FORGEBIT_STATUS_INVALID_PUBLIC_KEY;
-    }
-    if (decoded_len != FORGEBIT_PUBLIC_KEY_BYTES) {
+    if (bst == FB_B64_ALLOC_FAILED) return FORGEBIT_STATUS_ALLOCATION_FAILED;
+    if (bst != FB_B64_OK || decoded_len != FORGEBIT_PUBLIC_KEY_BYTES) {
         free(decoded);
         return FORGEBIT_STATUS_INVALID_PUBLIC_KEY;
     }
@@ -124,6 +123,31 @@ forgebit_status forgebit_verifier_add_key_base64url(
     free(decoded);
 
     return forgebit_verifier_add_key(verifier, key_id, &key);
+}
+
+/* Bad input is malformed; running out of memory is an internal error. */
+static forgebit_result_code decode_segment(
+    const uint8_t *b64,
+    size_t b64_len,
+    uint8_t **out,
+    size_t *out_len
+) {
+    fb_b64_status st = fb_base64url_decode((const char *)b64, b64_len, out, out_len);
+    if (st == FB_B64_OK) return FORGEBIT_VALID;
+    return st == FB_B64_ALLOC_FAILED ? FORGEBIT_INTERNAL_ERROR : FORGEBIT_MALFORMED_LICENSE;
+}
+
+static forgebit_result_code parse_segment(
+    const uint8_t *bytes,
+    size_t len,
+    size_t max_bytes,
+    forgebit_result_code malformed,
+    fb_json_value **out
+) {
+    fb_json_parse_options popts = { FB_LIMIT_JSON_DEPTH, max_bytes, true };
+    fb_json_status st = fb_json_parse(bytes, len, &popts, out);
+    if (st == FB_JSON_OK) return FORGEBIT_VALID;
+    return st == FB_JSON_ERR_ALLOC ? FORGEBIT_INTERNAL_ERROR : malformed;
 }
 
 void forgebit_verify_options_init(forgebit_verify_options *options) {
@@ -151,13 +175,12 @@ forgebit_status forgebit_verify(
     uint8_t *sig_bytes = NULL;
     fb_json_value *header_tree = NULL;
     fb_json_value *payload_tree = NULL;
-
     forgebit_result_code code;
 
     /* Keep these checks in the order defined by protocol section 10. */
     if (verifier == NULL || (license == NULL && license_length > 0)) {
-        fb_result_set_failure(r, FORGEBIT_INVALID_ARGUMENT);
-        goto cleanup;
+        code = FORGEBIT_INVALID_ARGUMENT;
+        goto fail;
     }
 
     forgebit_verify_options opts = FORGEBIT_VERIFY_OPTIONS_INIT;
@@ -168,99 +191,65 @@ forgebit_status forgebit_verify(
     }
 
     if (!fb_crypto_ensure_initialized()) {
-        fb_result_set_failure(r, FORGEBIT_INTERNAL_ERROR);
-        goto cleanup;
+        code = FORGEBIT_INTERNAL_ERROR;
+        goto fail;
     }
 
-    if (license_length > FB_LIMIT_LICENSE_BYTES) {
-        fb_result_set_failure(r, FORGEBIT_MALFORMED_LICENSE);
-        goto cleanup;
-    }
-
-    /* Step 2 */
+    /* Steps 1-2 */
     fb_jws_segments segs;
-    if (fb_jws_split(license, license_length, &segs) != FB_JWS_OK) {
-        fb_result_set_failure(r, FORGEBIT_MALFORMED_LICENSE);
-        goto cleanup;
+    if (license_length > FB_LIMIT_LICENSE_BYTES ||
+        fb_jws_split(license, license_length, &segs) != FB_JWS_OK) {
+        code = FORGEBIT_MALFORMED_LICENSE;
+        goto fail;
     }
 
     /* Steps 3-4 */
     size_t header_bytes_len;
-    if (fb_base64url_decode(
-            (const char *)segs.header_b64,
-            segs.header_b64_len,
-            &header_bytes,
-            &header_bytes_len
-        ) != FB_B64_OK) {
-        fb_result_set_failure(r, FORGEBIT_MALFORMED_LICENSE);
-        goto cleanup;
-    }
+    code = decode_segment(segs.header_b64, segs.header_b64_len, &header_bytes, &header_bytes_len);
+    if (code != FORGEBIT_VALID) goto fail;
+    code = parse_segment(
+        header_bytes,
+        header_bytes_len,
+        FB_LIMIT_HEADER_BYTES,
+        FORGEBIT_MALFORMED_HEADER,
+        &header_tree
+    );
+    if (code != FORGEBIT_VALID) goto fail;
 
-    {
-        fb_json_parse_options header_popts = { FB_LIMIT_JSON_DEPTH, FB_LIMIT_HEADER_BYTES, true };
-        fb_json_status hst =
-            fb_json_parse(header_bytes, header_bytes_len, &header_popts, &header_tree);
-        if (hst != FB_JSON_OK) {
-            fb_result_set_failure(r, FORGEBIT_MALFORMED_HEADER);
-            goto cleanup;
-        }
-    }
-
-    {
-        const fb_json_value *alg = fb_json_object_find(header_tree, "alg");
-        if (!fb_json_is_string(alg) || alg->as.str.len != 5 ||
-            memcmp(alg->as.str.ptr, "EdDSA", 5) != 0) {
-            fb_result_set_failure(r, FORGEBIT_UNSUPPORTED_ALGORITHM);
-            goto cleanup;
-        }
+    const fb_json_value *alg = fb_json_object_find(header_tree, "alg");
+    if (!fb_json_is_string(alg) || alg->as.str.len != 5 ||
+        memcmp(alg->as.str.ptr, "EdDSA", 5) != 0) {
+        code = FORGEBIT_UNSUPPORTED_ALGORITHM;
+        goto fail;
     }
 
     const fb_json_value *kid = fb_json_object_find(header_tree, "kid");
     if (!fb_json_is_string(kid) || kid->as.str.len == 0) {
-        fb_result_set_failure(r, FORGEBIT_MALFORMED_HEADER);
-        goto cleanup;
+        code = FORGEBIT_MALFORMED_HEADER;
+        goto fail;
     }
     fb_result_set_key_id(r, kid->as.str.ptr, kid->as.str.len);
 
-    {
-        const fb_json_value *typ = fb_json_object_find(header_tree, "typ");
-        if (typ != NULL && !fb_json_is_string(typ)) {
-            fb_result_set_failure(r, FORGEBIT_MALFORMED_HEADER);
-            goto cleanup;
-        }
-        code = fb_header_validate_typ(typ, opts.strict_type, r);
-        if (code != FORGEBIT_VALID) {
-            fb_result_set_failure(r, code);
-            goto cleanup;
-        }
-    }
+    code = fb_header_validate_typ(fb_json_object_find(header_tree, "typ"), opts.strict_type, r);
+    if (code != FORGEBIT_VALID) goto fail;
 
-    {
-        const fb_json_value *crit = fb_json_object_find(header_tree, "crit");
-        code = fb_header_validate_crit(crit);
-        if (code != FORGEBIT_VALID) {
-            fb_result_set_failure(r, code);
-            goto cleanup;
-        }
-    }
+    code = fb_header_validate_crit(fb_json_object_find(header_tree, "crit"));
+    if (code != FORGEBIT_VALID) goto fail;
 
     /* Step 5 */
     const forgebit_public_key *key = find_key(verifier, kid->as.str.ptr, kid->as.str.len);
     if (key == NULL) {
-        fb_result_set_failure(r, FORGEBIT_UNKNOWN_KEY);
-        goto cleanup;
+        code = FORGEBIT_UNKNOWN_KEY;
+        goto fail;
     }
 
     /* Step 6 */
     size_t sig_len;
-    if (fb_base64url_decode((const char *)segs.sig_b64, segs.sig_b64_len, &sig_bytes, &sig_len) !=
-        FB_B64_OK) {
-        fb_result_set_failure(r, FORGEBIT_MALFORMED_LICENSE);
-        goto cleanup;
-    }
+    code = decode_segment(segs.sig_b64, segs.sig_b64_len, &sig_bytes, &sig_len);
+    if (code != FORGEBIT_VALID) goto fail;
     if (sig_len != FB_ED25519_SIGNATURE_BYTES) {
-        fb_result_set_failure(r, FORGEBIT_INVALID_SIGNATURE);
-        goto cleanup;
+        code = FORGEBIT_INVALID_SIGNATURE;
+        goto fail;
     }
     if (!fb_crypto_ed25519_verify(
             key->bytes,
@@ -268,51 +257,35 @@ forgebit_status forgebit_verify(
             segs.signing_input,
             segs.signing_input_len
         )) {
-        fb_result_set_failure(r, FORGEBIT_INVALID_SIGNATURE);
-        goto cleanup;
+        code = FORGEBIT_INVALID_SIGNATURE;
+        goto fail;
     }
 
     /* Step 7 */
     size_t payload_bytes_len;
-    if (fb_base64url_decode(
-            (const char *)segs.payload_b64,
-            segs.payload_b64_len,
-            &payload_bytes,
-            &payload_bytes_len
-        ) != FB_B64_OK) {
-        fb_result_set_failure(r, FORGEBIT_MALFORMED_LICENSE);
-        goto cleanup;
-    }
-    {
-        fb_json_parse_options payload_popts = { FB_LIMIT_JSON_DEPTH, FB_LIMIT_PAYLOAD_BYTES, true };
-        fb_json_status pst =
-            fb_json_parse(payload_bytes, payload_bytes_len, &payload_popts, &payload_tree);
-        if (pst != FB_JSON_OK) {
-            fb_result_set_failure(r, FORGEBIT_MALFORMED_PAYLOAD);
-            goto cleanup;
-        }
-    }
+    code =
+        decode_segment(segs.payload_b64, segs.payload_b64_len, &payload_bytes, &payload_bytes_len);
+    if (code != FORGEBIT_VALID) goto fail;
+    code = parse_segment(
+        payload_bytes,
+        payload_bytes_len,
+        FB_LIMIT_PAYLOAD_BYTES,
+        FORGEBIT_MALFORMED_PAYLOAD,
+        &payload_tree
+    );
+    if (code != FORGEBIT_VALID) goto fail;
 
     /* Step 8 */
     code = fb_claims_validate_required(payload_tree, r);
-    if (code != FORGEBIT_VALID) {
-        fb_result_set_failure(r, code);
-        goto cleanup;
-    }
+    if (code != FORGEBIT_VALID) goto fail;
 
     /* Step 9 */
     code = fb_claims_validate_version(payload_tree);
-    if (code != FORGEBIT_VALID) {
-        fb_result_set_failure(r, code);
-        goto cleanup;
-    }
+    if (code != FORGEBIT_VALID) goto fail;
 
     /* Step 10 */
     code = fb_claims_validate_offline(payload_tree);
-    if (code != FORGEBIT_VALID) {
-        fb_result_set_failure(r, code);
-        goto cleanup;
-    }
+    if (code != FORGEBIT_VALID) goto fail;
 
     /* Step 11 */
     code = fb_claims_validate_vendor_product(
@@ -320,38 +293,30 @@ forgebit_status forgebit_verify(
         opts.expected_vendor,
         opts.expected_product
     );
-    if (code != FORGEBIT_VALID) {
-        fb_result_set_failure(r, code);
-        goto cleanup;
-    }
+    if (code != FORGEBIT_VALID) goto fail;
 
     /* Step 12 */
-    {
-        int64_t now = opts.has_current_time ? opts.current_time : (int64_t)time(NULL);
-        code = fb_claims_validate_time(
-            payload_tree,
-            now,
-            opts.clock_skew_seconds,
-            opts.require_expiration,
-            r
-        );
-        if (code != FORGEBIT_VALID) {
-            fb_result_set_failure(r, code);
-            goto cleanup;
-        }
-    }
+    int64_t now = opts.has_current_time ? opts.current_time : (int64_t)time(NULL);
+    code = fb_claims_validate_time(
+        payload_tree,
+        now,
+        opts.clock_skew_seconds,
+        opts.require_expiration,
+        r
+    );
+    if (code != FORGEBIT_VALID) goto fail;
 
     /* Step 13 */
     code = fb_claims_validate_hardware(payload_tree, opts.hardware_id);
-    if (code != FORGEBIT_VALID) {
-        fb_result_set_failure(r, code);
-        goto cleanup;
-    }
+    if (code != FORGEBIT_VALID) goto fail;
 
     /* Step 14 */
     fb_result_set_success(r, payload_tree);
     payload_tree = NULL; /* now owned by r */
+    goto cleanup;
 
+fail:
+    fb_result_set_failure(r, code);
 cleanup:
     free(header_bytes);
     free(payload_bytes);

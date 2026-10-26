@@ -23,16 +23,7 @@ fb_b64_status fb_base64url_decode(const char *in, size_t in_len, uint8_t **out, 
     *out = NULL;
     *out_len = 0;
 
-    if (in_len == 0) {
-        uint8_t *buf = (uint8_t *)malloc(1);
-        if (buf == NULL) return FB_B64_ALLOC_FAILED;
-        buf[0] = '\0';
-        *out = buf;
-        *out_len = 0;
-        return FB_B64_OK;
-    }
-
-    if (in == NULL) {
+    if (in_len > 0 && in == NULL) {
         return FB_B64_INVALID_LENGTH;
     }
 
@@ -72,6 +63,10 @@ fb_b64_status fb_base64url_decode(const char *in, size_t in_len, uint8_t **out, 
                 return FB_B64_INVALID_CHAR;
             }
             vals[j] = v;
+        }
+        if ((chunk == 2 && (vals[1] & 0x0F) != 0) || (chunk == 3 && (vals[2] & 0x03) != 0)) {
+            free(buf);
+            return FB_B64_NONCANONICAL;
         }
 
         uint32_t triple = ((uint32_t)vals[0] << 18) | ((uint32_t)vals[1] << 12) |

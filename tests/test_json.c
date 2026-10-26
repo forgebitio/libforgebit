@@ -1,5 +1,7 @@
 #include "forgebit/forgebit.h"
 
+#include <locale.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include "json.h"
@@ -115,6 +117,42 @@ FB_TEST_CASE(rejects_invalid_utf8) {
     FB_ASSERT_EQ_INT(fb_json_parse(text, sizeof(text), &o, &root), FB_JSON_ERR_UTF8);
 }
 
+FB_TEST_CASE(double_parse_ignores_process_locale) {
+    /* These locales use ',' as the decimal separator. */
+    const char *locales[] = { "de_DE.UTF-8", "de_DE.utf8", "fr_FR.UTF-8", "fr_FR.utf8" };
+    const char *active = NULL;
+    for (size_t i = 0; i < sizeof(locales) / sizeof(locales[0]) && active == NULL; i++) {
+        active = setlocale(LC_ALL, locales[i]);
+    }
+    if (active == NULL) {
+        /* CI must install one (see ci.yml / release.yml) so the check runs. */
+        FB_ASSERT_TRUE(getenv("CI") == NULL);
+        printf("(skipped: no comma-decimal locale installed) ");
+        return;
+    }
+
+    const char *text = "{\"x\":1.5}";
+    fb_json_parse_options o = default_opts();
+    fb_json_value *root = NULL;
+    FB_ASSERT_EQ_INT(fb_json_parse((const uint8_t *)text, strlen(text), &o, &root), FB_JSON_OK);
+    double d = 0;
+    FB_ASSERT_TRUE(forgebit_json_get_number(fb_json_object_find(root, "x"), &d));
+    FB_ASSERT_TRUE(d == 1.5);
+    fb_json_free(root);
+    setlocale(LC_ALL, "C");
+}
+
+FB_TEST_CASE(rejects_non_finite_double) {
+    const char *text = "{\"x\":1e999}";
+    fb_json_parse_options o = default_opts();
+    fb_json_value *root = NULL;
+    FB_ASSERT_EQ_INT(
+        fb_json_parse((const uint8_t *)text, strlen(text), &o, &root),
+        FB_JSON_ERR_NUMBER_RANGE
+    );
+    fb_json_free(root);
+}
+
 int main(void) {
     printf("test_json\n");
     FB_RUN_TEST(parse_simple_object);
@@ -128,5 +166,7 @@ int main(void) {
     FB_RUN_TEST(rejects_oversized_input);
     FB_RUN_TEST(handles_embedded_nul_via_unicode_escape);
     FB_RUN_TEST(rejects_invalid_utf8);
+    FB_RUN_TEST(double_parse_ignores_process_locale);
+    FB_RUN_TEST(rejects_non_finite_double);
     FB_TEST_EXIT();
 }

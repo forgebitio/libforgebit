@@ -34,7 +34,8 @@ forgebit_result_code fb_claims_validate_hardware(
     const char *hardware_id
 );
 
-/* typ_value may be NULL when the header has no typ field. */
+/* typ_value may be NULL when the header has no typ field; a non-string typ
+ * is a malformed header. */
 forgebit_result_code fb_header_validate_typ(
     const fb_json_value *typ_value,
     bool strict_type,

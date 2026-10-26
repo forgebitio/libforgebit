@@ -62,7 +62,8 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install --yes libsodium-dev pkg-config
+          sudo apt-get install --yes libsodium-dev pkg-config locales
+          sudo locale-gen de_DE.UTF-8
 
       - name: Install macOS dependencies
         if: runner.os == 'macOS'
@@ -95,7 +96,8 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install --yes clang libsodium-dev pkg-config
+          sudo apt-get install --yes clang libsodium-dev pkg-config locales
+          sudo locale-gen de_DE.UTF-8
 
       - name: Check version metadata
         run: bash ./scripts/check-version.sh

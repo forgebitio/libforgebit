@@ -17,10 +17,10 @@ static int64_t saturating_sub_skew(int64_t now, uint32_t skew) {
     return now - skew64;
 }
 
-static bool str_eq(const fb_json_value *v, const char *literal) {
+static bool str_eq(const fb_json_value *v, const char *s) {
     if (!fb_json_is_string(v)) return false;
-    size_t len = strlen(literal);
-    return v->as.str.len == len && memcmp(v->as.str.ptr, literal, len) == 0;
+    size_t len = strlen(s);
+    return v->as.str.len == len && memcmp(v->as.str.ptr, s, len) == 0;
 }
 
 static bool is_nonempty_string(const fb_json_value *v) {
@@ -110,7 +110,7 @@ forgebit_result_code fb_claims_validate_version(const fb_json_value *payload) {
 
 forgebit_result_code fb_claims_validate_offline(const fb_json_value *payload) {
     const fb_json_value *v = fb_json_object_find(payload, "offline");
-    if (!fb_json_is_bool(v) || v->as.b != true) return FORGEBIT_OFFLINE_NOT_ALLOWED;
+    if (!fb_json_is_bool(v) || !v->as.b) return FORGEBIT_OFFLINE_NOT_ALLOWED;
     return FORGEBIT_VALID;
 }
 
@@ -177,26 +177,12 @@ forgebit_result_code fb_claims_validate_hardware(
 
     if (hardware_id == NULL) return FORGEBIT_HARDWARE_ID_REQUIRED;
 
-    size_t hwid_len = strlen(hardware_id);
-
-    if (fb_json_is_string(hwid)) {
-        if (hwid->as.str.len == hwid_len && memcmp(hwid->as.str.ptr, hardware_id, hwid_len) == 0) {
-            return FORGEBIT_VALID;
-        }
-        return FORGEBIT_HARDWARE_MISMATCH;
-    }
-
+    if (str_eq(hwid, hardware_id)) return FORGEBIT_VALID;
     if (fb_json_is_array(hwid)) {
         for (size_t i = 0; i < hwid->as.arr.count; i++) {
-            const fb_json_value *item = hwid->as.arr.items[i];
-            if (fb_json_is_string(item) && item->as.str.len == hwid_len &&
-                memcmp(item->as.str.ptr, hardware_id, hwid_len) == 0) {
-                return FORGEBIT_VALID;
-            }
+            if (str_eq(hwid->as.arr.items[i], hardware_id)) return FORGEBIT_VALID;
         }
-        return FORGEBIT_HARDWARE_MISMATCH;
     }
-
     return FORGEBIT_HARDWARE_MISMATCH;
 }
 
@@ -205,6 +191,8 @@ forgebit_result_code fb_header_validate_typ(
     bool strict_type,
     forgebit_verify_result *result
 ) {
+    if (typ_value != NULL && !fb_json_is_string(typ_value)) return FORGEBIT_MALFORMED_HEADER;
+
     bool accepted = str_eq(typ_value, "JWT") || str_eq(typ_value, "FORGEBIT-LICENSE");
     if (accepted) return FORGEBIT_VALID;
 
